@@ -261,5 +261,11 @@ DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@stika.ng')
 
 PHONENUMBER_DEFAULT_REGION = 'NG'
 
+# Kudisms OTP Configuration
+KUDISMS_TOKEN = env('KUDISMS_TOKEN', default='')
+KUDISMS_SENDER_ID = env('KUDISMS_SENDER_ID', default='')
+KUDISMS_APPNAME_CODE = env('KUDISMS_APPNAME_CODE', default='')
+KUDISMS_TEMPLATE_CODE = env('KUDISMS_TEMPLATE_CODE', default='')
+
 # File storage using fly.io volumes (no AWS needed)
 # DEFAULT_FILE_STORAGE uses Django's default FileSystemStorage

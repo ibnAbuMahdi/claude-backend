@@ -74,3 +74,29 @@ class UserProfile(BaseModel):
     
     def __str__(self):
         return f"Profile of {self.user.email}"
+
+# Models to store OTP verification records
+class OTPVerification(BaseModel):
+    """Track OTP verification attempts"""
+    phone_number = models.CharField(max_length=20)
+    verification_id = models.CharField(max_length=100, unique=True)  # From Kudisms
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('sent', 'Sent'),
+            ('verified', 'Verified'),
+            ('expired', 'Expired'),
+            ('failed', 'Failed'),
+        ],
+        default='sent'
+    )
+    cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    attempts_used = models.IntegerField(default=0)
+    max_attempts = models.IntegerField(default=2)
+    expires_at = models.DateTimeField()
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['phone_number', 'status']),
+            models.Index(fields=['verification_id']),
+        ]
