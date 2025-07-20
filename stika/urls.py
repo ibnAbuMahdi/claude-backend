@@ -11,6 +11,7 @@ api_v1_patterns = [
     path('agencies/', include('apps.agencies.urls')),
     path('campaigns/', include('apps.campaigns.urls')),
     path('riders/', include('apps.riders.urls')),
+    path('rider/', include('apps.riders.urls')),  # Support both singular and plural
     path('fleets/', include('apps.fleets.urls')),
     path('verification/', include('apps.verification.urls')),
     path('payments/', include('apps.payments.urls')),
