@@ -19,4 +19,3 @@ urlpatterns += [
     path('refresh/', views.refresh_token, name='token_refresh'),
     path('logout/', views.logout, name='logout'),
 ]
-"""

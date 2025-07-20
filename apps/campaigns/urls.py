@@ -1,5 +1,6 @@
 from django.urls import path, include
+from . import views
 
 urlpatterns = [
-    # Campaign management endpoints will be added here
+    path('available/', views.available_campaigns, name='available_campaigns'),
 ]

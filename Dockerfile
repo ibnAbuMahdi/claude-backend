@@ -31,8 +31,9 @@ COPY . .
 # Create logs directory
 RUN mkdir -p logs
 
-# Collect static files
-RUN python manage.py collectstatic --noinput
+# Create staticfiles directory and collect static files
+RUN mkdir -p /app/staticfiles
+RUN DJANGO_SETTINGS_MODULE=stika.settings python manage.py collectstatic --noinput --settings=stika.settings
 
 # Production stage
 FROM base as production

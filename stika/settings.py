@@ -195,6 +195,14 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
+# Redis Cache Configuration
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': env('REDIS_URL', default='redis://localhost:6379/0'),
+    }
+}
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -246,7 +254,7 @@ if not DEBUG:
             DjangoIntegration(),
             CeleryIntegration(),
         ],
-        traces_sample_rate=0.1,
+        traces_sample_rate=1.0,
         send_default_pii=True,
     )
 

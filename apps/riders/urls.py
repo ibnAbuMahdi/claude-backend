@@ -1,5 +1,7 @@
 from django.urls import path, include
+from . import views
 
 urlpatterns = [
-    # Rider management endpoints will be added here
+    path('earnings/', views.rider_earnings, name='rider_earnings'),
+    path('payment-summary/', views.payment_summary, name='payment_summary'),
 ]
