@@ -14,23 +14,40 @@ def rider_earnings(request):
     Get rider earnings data
     TODO: Implement actual earnings logic
     """
+    logger.info(f"=== RIDER EARNINGS REQUEST ===")
+    logger.info(f"User: {request.user.id} ({request.user.phone_number})")
+    logger.info(f"Query params: {dict(request.GET)}")
+    logger.info(f"Method: {request.method}")
+    logger.info(f"Path: {request.path}")
+    
     try:
-        # Return empty earnings data for now to prevent app crashes
         # Return earnings data in expected format with pagination
-        return Response({
+        response_data = {
             'results': [],  # Empty list of earnings
             'count': 0,
             'next': None,
             'previous': None
-        })
+        }
+        
+        logger.info(f"Successfully returning earnings response: {response_data}")
+        return Response(response_data)
     except Exception as e:
-        logger.error(f"Rider earnings error: {str(e)}")
-        return Response({
+        logger.error(f"=== RIDER EARNINGS ERROR ===")
+        logger.error(f"User: {request.user.id} ({request.user.phone_number})")
+        logger.error(f"Error: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        error_response = {
             'results': [],
             'count': 0,
             'next': None,
             'previous': None
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        }
+        
+        logger.error(f"Returning error response: {error_response}")
+        return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -39,9 +56,15 @@ def payment_summary(request):
     Get rider payment summary
     TODO: Implement actual payment summary logic
     """
+    logger.info(f"=== PAYMENT SUMMARY REQUEST ===")
+    logger.info(f"User: {request.user.id} ({request.user.phone_number})")
+    logger.info(f"Query params: {dict(request.GET)}")
+    logger.info(f"Method: {request.method}")
+    logger.info(f"Path: {request.path}")
+    
     try:
         # Return payment summary in expected format
-        return Response({
+        response_data = {
             'total_earnings': 0.0,
             'pending_earnings': 0.0,
             'paid_earnings': 0.0,
@@ -53,10 +76,19 @@ def payment_summary(request):
             'last_payment': '2024-01-01T00:00:00Z',
             'preferred_payment_method': 'bank_transfer',
             'recent_earnings': []
-        })
+        }
+        
+        logger.info(f"Successfully returning payment summary: {response_data}")
+        return Response(response_data)
     except Exception as e:
-        logger.error(f"Payment summary error: {str(e)}")
-        return Response({
+        logger.error(f"=== PAYMENT SUMMARY ERROR ===")
+        logger.error(f"User: {request.user.id} ({request.user.phone_number})")
+        logger.error(f"Error: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        error_response = {
             'total_earnings': 0.0,
             'pending_earnings': 0.0,
             'paid_earnings': 0.0,
@@ -68,4 +100,7 @@ def payment_summary(request):
             'last_payment': '2024-01-01T00:00:00Z',
             'preferred_payment_method': 'bank_transfer',
             'recent_earnings': []
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        }
+        
+        logger.error(f"Returning error response: {error_response}")
+        return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

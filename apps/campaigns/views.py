@@ -14,10 +14,27 @@ def available_campaigns(request):
     Get available campaigns for the authenticated rider
     TODO: Implement actual campaign logic
     """
+    logger.info(f"=== AVAILABLE CAMPAIGNS REQUEST ===")
+    logger.info(f"User: {request.user.id} ({request.user.phone_number})")
+    logger.info(f"Query params: {dict(request.GET)}")
+    logger.info(f"Method: {request.method}")
+    logger.info(f"Path: {request.path}")
+    
     try:
-        # Return empty list for now to prevent app crashes
         # Return empty list directly - campaign service expects response.data['results'] or response.data as list
-        return Response([])
+        response_data = []
+        
+        logger.info(f"Successfully returning campaigns response: {response_data}")
+        return Response(response_data)
     except Exception as e:
-        logger.error(f"Available campaigns error: {str(e)}")
-        return Response([], status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error(f"=== AVAILABLE CAMPAIGNS ERROR ===")
+        logger.error(f"User: {request.user.id} ({request.user.phone_number})")
+        logger.error(f"Error: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        error_response = []
+        
+        logger.error(f"Returning error response: {error_response}")
+        return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
