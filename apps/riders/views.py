@@ -16,16 +16,20 @@ def rider_earnings(request):
     """
     try:
         # Return empty earnings data for now to prevent app crashes
-        # Return earnings data in expected format
+        # Return earnings data in expected format with pagination
         return Response({
-            'earnings': [],
-            'has_more': False
+            'results': [],  # Empty list of earnings
+            'count': 0,
+            'next': None,
+            'previous': None
         })
     except Exception as e:
         logger.error(f"Rider earnings error: {str(e)}")
         return Response({
-            'earnings': [],
-            'has_more': False
+            'results': [],
+            'count': 0,
+            'next': None,
+            'previous': None
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET'])
@@ -36,30 +40,32 @@ def payment_summary(request):
     TODO: Implement actual payment summary logic
     """
     try:
-        # Return empty payment summary for now to prevent app crashes
+        # Return payment summary in expected format
         return Response({
-            'success': True,
-            'this_week_earnings': 0.0,
+            'total_earnings': 0.0,
             'pending_earnings': 0.0,
             'paid_earnings': 0.0,
-            'total_earnings': 0.0,
-            'formatted_this_week_earnings': '₦0.00',
-            'formatted_pending_earnings': '₦0.00',
-            'formatted_paid_earnings': '₦0.00',
-            'formatted_total_earnings': '₦0.00',
-            'message': 'No payment data available yet'
+            'this_week_earnings': 0.0,
+            'this_month_earnings': 0.0,
+            'total_hours': 0,
+            'total_verifications': 0,
+            'active_campaigns': 0,
+            'last_payment': '2024-01-01T00:00:00Z',
+            'preferred_payment_method': 'bank_transfer',
+            'recent_earnings': []
         })
     except Exception as e:
         logger.error(f"Payment summary error: {str(e)}")
         return Response({
-            'success': False,
-            'this_week_earnings': 0.0,
+            'total_earnings': 0.0,
             'pending_earnings': 0.0,
             'paid_earnings': 0.0,
-            'total_earnings': 0.0,
-            'formatted_this_week_earnings': '₦0.00',
-            'formatted_pending_earnings': '₦0.00',
-            'formatted_paid_earnings': '₦0.00',
-            'formatted_total_earnings': '₦0.00',
-            'message': 'Failed to load payment summary'
+            'this_week_earnings': 0.0,
+            'this_month_earnings': 0.0,
+            'total_hours': 0,
+            'total_verifications': 0,
+            'active_campaigns': 0,
+            'last_payment': '2024-01-01T00:00:00Z',
+            'preferred_payment_method': 'bank_transfer',
+            'recent_earnings': []
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
