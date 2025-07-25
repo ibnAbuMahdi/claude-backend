@@ -260,15 +260,17 @@ if not DEBUG:
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.celery import CeleryIntegration
     
-    sentry_sdk.init(
-        dsn=env('SENTRY_DSN', default=''),
-        integrations=[
-            DjangoIntegration(),
-            CeleryIntegration(),
-        ],
-        traces_sample_rate=1.0,
-        send_default_pii=True,
-    )
+    sentry_dsn = env('SENTRY_DSN', default='')
+    if sentry_dsn:  # Only initialize Sentry if DSN is provided
+        sentry_sdk.init(
+            dsn=sentry_dsn,
+            integrations=[
+                DjangoIntegration(),
+                CeleryIntegration(),
+            ],
+            traces_sample_rate=1.0,
+            send_default_pii=True,
+        )
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = env('EMAIL_HOST', default='sandbox.smtp.mailtrap.io')

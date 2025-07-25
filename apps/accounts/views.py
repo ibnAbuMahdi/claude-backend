@@ -111,7 +111,7 @@ def send_otp(request):
         if hasattr(result, 'get'):
             try:
                 logger.info(f"Waiting for task result...")
-                task_result = result.get(timeout=5)  # Wait max 5 seconds
+                task_result = result.get(timeout=15)  # Wait max 5 seconds
                 logger.info(f"Task result: {task_result}")
                 if not task_result.get('success'):
                     return Response({
@@ -518,6 +518,7 @@ def send_otp_kudisms(self, phone_number):
         
         # Prepare form data for Kudisms OTP endpoint
         form_data = {
+	    'channel': 'sms',
             'token': token,
             'senderID': sender_id,
             'recipients': phone_number,
@@ -526,19 +527,18 @@ def send_otp_kudisms(self, phone_number):
             'otp_type': 'NUMERIC',
             'otp_length': '4',
             'otp_duration': '5',  # 5 minutes
-            'channel': 'sms'
+            'otp_attempts': '2'
         }
         
         logger.info(f"Sending request to KudiSMS with data: {form_data}")
         
         # Send request to Kudisms OTP endpoint (multipart/form-data)
         # Use the exact format from KudiSMS documentation
-        response = requests.post(
+        response = requests.request('POST',
             'https://my.kudisms.net/api/sendotp',
             headers={},
             data=form_data,
-            files=[],
-            timeout=30
+            files=[]
         )
         
         logger.info(f"KudiSMS response status: {response.status_code}")
