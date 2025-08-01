@@ -3,7 +3,17 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from django.db import transaction
 import logging
+
+from .models import Rider
+from .serializers import (
+    RiderActivationSerializer, 
+    RiderSerializer, 
+    PlateNumberValidationSerializer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,3 +114,123 @@ def payment_summary(request):
         
         logger.error(f"Returning error response: {error_response}")
         return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def activate_rider(request):
+    """
+    Activate rider with plate number
+    """
+    logger.info(f"=== RIDER ACTIVATION REQUEST ===")
+    logger.info(f"User: {request.user.id} ({request.user.phone_number})")
+    logger.info(f"Data: {request.data}")
+    
+    try:
+        # Get rider instance
+        try:
+            rider = get_object_or_404(Rider, user=request.user)
+        except Exception as e:
+            logger.error(f"Rider not found for user {request.user.id}: {str(e)}")
+            return Response(
+                {'error': 'Rider profile not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Validate request data
+        serializer = RiderActivationSerializer(data=request.data)
+        if not serializer.is_valid():
+            logger.error(f"Validation errors: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Activate rider
+        with transaction.atomic():
+            try:
+                activated_rider = serializer.activate_rider(rider)
+                response_serializer = RiderSerializer(activated_rider)
+                
+                logger.info(f"Rider {rider.rider_id} activated successfully")
+                return Response({
+                    'message': 'Rider activated successfully',
+                    'rider': response_serializer.data
+                }, status=status.HTTP_200_OK)
+                
+            except Exception as activation_error:
+                logger.error(f"Activation failed: {str(activation_error)}")
+                return Response(
+                    {'error': str(activation_error)}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+    except Exception as e:
+        logger.error(f"=== RIDER ACTIVATION ERROR ===")
+        logger.error(f"User: {request.user.id}")
+        logger.error(f"Error: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        return Response(
+            {'error': 'Internal server error'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def validate_plate_number(request):
+    """
+    Validate plate number without activation
+    """
+    logger.info(f"=== PLATE VALIDATION REQUEST ===")
+    logger.info(f"User: {request.user.id} ({request.user.phone_number})")
+    logger.info(f"Data: {request.data}")
+    
+    try:
+        serializer = PlateNumberValidationSerializer(data=request.data)
+        if serializer.is_valid():
+            logger.info(f"Plate number validation successful")
+            return Response({
+                'message': 'Plate number is valid',
+                'plate_number': serializer.validated_data['plate_number']
+            }, status=status.HTTP_200_OK)
+        else:
+            logger.error(f"Plate validation errors: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        logger.error(f"=== PLATE VALIDATION ERROR ===")
+        logger.error(f"User: {request.user.id}")
+        logger.error(f"Error: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        return Response(
+            {'error': 'Internal server error'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def rider_profile(request):
+    """
+    Get rider profile information
+    """
+    logger.info(f"=== RIDER PROFILE REQUEST ===")
+    logger.info(f"User: {request.user.id} ({request.user.phone_number})")
+    
+    try:
+        rider = get_object_or_404(Rider, user=request.user)
+        serializer = RiderSerializer(rider)
+        
+        logger.info(f"Rider profile retrieved successfully")
+        return Response(serializer.data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"=== RIDER PROFILE ERROR ===")
+        logger.error(f"User: {request.user.id}")
+        logger.error(f"Error: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        return Response(
+            {'error': 'Rider profile not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )

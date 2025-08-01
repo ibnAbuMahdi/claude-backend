@@ -30,4 +30,7 @@ django-simple-history==3.4.0
 
 # GeoDjango dependencies  
 GDAL==3.4.3
-Fiona==1.8.22
+Fiona==1.9.0
+
+# Tracking system dependencies
+djangorestframework-gis==1.0

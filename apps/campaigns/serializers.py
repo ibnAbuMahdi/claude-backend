@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Campaign, CampaignRiderAssignment, CampaignGeofence, CampaignGeofenceAssignment
+from .models import Campaign, CampaignRiderAssignment, CampaignGeofence, CampaignGeofenceAssignment, PickupLocation
 from apps.agencies.models import AgencyClient
 from django.utils import timezone
 
@@ -10,6 +10,24 @@ class AgencyClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = AgencyClient
         fields = ['id', 'name', 'industry', 'client_type']
+
+
+class PickupLocationSerializer(serializers.ModelSerializer):
+    """Serializer for sticker pickup locations"""
+    
+    full_location_info = serializers.ReadOnlyField()
+    today_hours = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = PickupLocation
+        fields = [
+            'id', 'contact_name', 'contact_phone', 'address', 'landmark',
+            'pickup_instructions', 'operating_hours', 'is_active', 'notes',
+            'full_location_info', 'today_hours'
+        ]
+    
+    def get_today_hours(self, obj):
+        return obj.get_today_hours()
 
 
 class CampaignGeofenceSerializer(serializers.ModelSerializer):
@@ -33,6 +51,9 @@ class CampaignGeofenceSerializer(serializers.ModelSerializer):
     is_full = serializers.ReadOnlyField()
     can_assign_rider = serializers.ReadOnlyField()
     
+    # Pickup locations (multiple)
+    pickup_locations = PickupLocationSerializer(many=True, read_only=True)
+    
     class Meta:
         model = CampaignGeofence
         fields = [
@@ -45,7 +66,7 @@ class CampaignGeofenceSerializer(serializers.ModelSerializer):
             'target_demographics', 'special_instructions', 'available_slots',
             'fill_percentage', 'budget_utilization', 'remaining_budget',
             'verification_success_rate', 'average_hourly_rate', 'is_active',
-            'is_full', 'can_assign_rider', 'created_at', 'updated_at'
+            'is_full', 'can_assign_rider', 'pickup_locations', 'created_at', 'updated_at'
         ]
         read_only_fields = [
             'id', 'current_riders', 'total_distance_covered', 'total_verifications',
@@ -203,6 +224,23 @@ class CampaignSerializer(serializers.ModelSerializer):
                     {"lat": lat, "lng": lng} for lng, lat in coords[:-1]  # Exclude last duplicate point
                 ]
             
+            # Serialize pickup locations
+            pickup_locations_data = []
+            for pickup in geofence.pickup_locations.filter(is_active=True):
+                pickup_locations_data.append({
+                    "id": str(pickup.id),
+                    "contact_name": pickup.contact_name,
+                    "contact_phone": pickup.contact_phone,
+                    "address": pickup.address,
+                    "landmark": pickup.landmark,
+                    "pickup_instructions": pickup.pickup_instructions,
+                    "operating_hours": pickup.operating_hours,
+                    "is_active": pickup.is_active,
+                    "notes": pickup.notes,
+                    "full_location_info": pickup.full_location_info,
+                    "today_hours": pickup.get_today_hours()
+                })
+            
             geofences.append({
                 "id": str(geofence.id),
                 "name": geofence.name,
@@ -250,6 +288,9 @@ class CampaignSerializer(serializers.ModelSerializer):
                 "targetCoverageHours": geofence.target_coverage_hours,
                 "verificationFrequency": geofence.verification_frequency,
                 "specialInstructions": geofence.special_instructions,
+                
+                # Pickup locations
+                "pickupLocations": pickup_locations_data,
             })
         
         # Fallback: if no geofences in new model, create from legacy data or defaults
@@ -420,9 +461,12 @@ class CampaignSerializer(serializers.ModelSerializer):
 
 
 class CampaignJoinSerializer(serializers.Serializer):
-    """Serializer for joining a campaign"""
+    """Serializer for joining a specific campaign geofence with location validation"""
     
     campaign_id = serializers.UUIDField()
+    geofence_id = serializers.UUIDField()
+    latitude = serializers.DecimalField(max_digits=10, decimal_places=7)
+    longitude = serializers.DecimalField(max_digits=10, decimal_places=7)
     
     def validate_campaign_id(self, value):
         """Validate that campaign exists and can be joined"""
@@ -438,18 +482,22 @@ class CampaignJoinSerializer(serializers.Serializer):
         if not campaign.is_active:
             raise serializers.ValidationError("Campaign is not currently running")
         
-        # Check if campaign has available spots
-        current_riders = campaign.assigned_riders.filter(
-            campaignriderassignment__status__in=['assigned', 'accepted', 'active']
-        ).count()
-        
-        if current_riders >= campaign.required_riders:
-            raise serializers.ValidationError("Campaign is full")
+        return value
+    
+    def validate_geofence_id(self, value):
+        """Validate that geofence exists"""
+        try:
+            geofence = CampaignGeofence.objects.get(id=value)
+        except CampaignGeofence.DoesNotExist:
+            raise serializers.ValidationError("Geofence not found")
         
         return value
     
     def validate(self, attrs):
-        """Additional validation"""
+        """Additional validation including location-based geofence validation"""
+        from django.contrib.gis.geos import Point
+        from django.contrib.gis.measure import Distance
+        
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             raise serializers.ValidationError("Authentication required")
@@ -471,8 +519,55 @@ class CampaignJoinSerializer(serializers.Serializer):
         if not rider.can_accept_campaign:
             raise serializers.ValidationError("Rider has reached maximum concurrent campaigns")
         
-        # Check if rider is already in this campaign
+        # Get campaign and geofence
         campaign_id = attrs['campaign_id']
+        geofence_id = attrs['geofence_id']
+        
+        try:
+            campaign = Campaign.objects.get(id=campaign_id)
+            geofence = CampaignGeofence.objects.get(id=geofence_id)
+        except (Campaign.DoesNotExist, CampaignGeofence.DoesNotExist):
+            raise serializers.ValidationError("Campaign or geofence not found")
+        
+        # Validate that geofence belongs to campaign
+        if geofence.campaign_id != campaign_id:
+            raise serializers.ValidationError("Geofence does not belong to the specified campaign")
+        
+        # Check if geofence can accept more riders
+        if not geofence.can_assign_rider():
+            if geofence.is_full:
+                raise serializers.ValidationError("This geofence is at capacity")
+            elif not geofence.is_active:
+                raise serializers.ValidationError("This geofence is not currently active")
+            elif geofence.remaining_budget <= 0:
+                raise serializers.ValidationError("This geofence has no remaining budget")
+            else:
+                raise serializers.ValidationError("This geofence cannot accept new riders")
+        
+        # CRITICAL: Validate that rider is within the geofence
+        rider_location = Point(float(attrs['longitude']), float(attrs['latitude']))
+        geofence_center = Point(float(geofence.center_longitude), float(geofence.center_latitude))
+        
+        # Check if rider is within geofence radius
+        distance_to_center = rider_location.distance(geofence_center) * 111320  # Convert degrees to meters
+        
+        if distance_to_center > geofence.radius_meters:
+            raise serializers.ValidationError(
+                f"You must be within the {geofence.name} area to join this geofence. "
+                f"You are {int(distance_to_center - geofence.radius_meters)}m away from the boundary."
+            )
+        
+        # Check if rider is already assigned to this specific geofence
+        existing_geofence_assignment = CampaignGeofenceAssignment.objects.filter(
+            campaign_geofence=geofence,
+            rider=rider,
+            status__in=['assigned', 'active']
+        ).exists()
+        
+        if existing_geofence_assignment:
+            raise serializers.ValidationError("You are already assigned to this geofence")
+        
+        # Check if rider is already in this campaign (any geofence)
         existing_assignment = CampaignRiderAssignment.objects.filter(
             campaign_id=campaign_id,
             rider=rider,
@@ -480,8 +575,89 @@ class CampaignJoinSerializer(serializers.Serializer):
         ).exists()
         
         if existing_assignment:
-            raise serializers.ValidationError("Rider is already assigned to this campaign")
+            raise serializers.ValidationError("You are already assigned to a geofence in this campaign")
         
+        return attrs
+
+
+class CampaignJoinWithVerificationSerializer(CampaignJoinSerializer):
+    """Extends CampaignJoinSerializer to include verification data"""
+    
+    # Image data (multipart upload)
+    image = serializers.ImageField()
+    accuracy = serializers.DecimalField(max_digits=8, decimal_places=2)
+    timestamp = serializers.DateTimeField()
+    
+    def validate_image(self, value):
+        """Validate image file"""
+        if value.size > 5 * 1024 * 1024:  # 5MB limit
+            raise serializers.ValidationError("Image file too large (max 5MB)")
+        
+        # Format validation using file extension since content_type is not available on ImageFieldFile
+        if hasattr(value, 'name') and value.name:
+            file_extension = value.name.lower().split('.')[-1]
+            valid_extensions = ['jpg', 'jpeg', 'png', 'webp']
+            if file_extension not in valid_extensions:
+                raise serializers.ValidationError(f"Invalid image format. Allowed: {', '.join(valid_extensions)}")
+        
+        return value
+    
+    def validate(self, attrs):
+        """Enhanced validation including cooldown checks"""
+        from apps.verification.models import VerificationCooldown, VerificationRequest
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        # First run parent validation (all existing checks)
+        attrs = super().validate(attrs)
+        
+        # Check verification cooldown
+        rider = self.context['request'].user.rider_profile
+        can_verify, cooldown_remaining = VerificationCooldown.check_cooldown(
+            rider, 'geofence_join'
+        )
+        
+        if not can_verify:
+            raise serializers.ValidationError(
+                f"Please wait {int(cooldown_remaining)} seconds before trying again"
+            )
+        
+        # Check for recent duplicate attempts
+        geofence = CampaignGeofence.objects.get(id=attrs['geofence_id'])
+        recent_attempt = VerificationRequest.objects.filter(
+            rider=rider,
+            geofence=geofence,
+            verification_type='geofence_join',
+            created_at__gte=timezone.now() - timedelta(minutes=5)
+        ).first()
+        
+        if recent_attempt and recent_attempt.status == 'passed':
+            # Check if already joined successfully
+            from apps.campaigns.models import CampaignGeofenceAssignment
+            existing_assignment = CampaignGeofenceAssignment.objects.filter(
+                campaign_geofence=geofence,
+                rider=rider,
+                status__in=['assigned', 'active']
+            ).first()
+            
+            if existing_assignment:
+                attrs['_existing_assignment'] = existing_assignment
+                attrs['_is_duplicate'] = True
+        
+        return attrs
+
+
+class GeofenceJoinSerializer(serializers.Serializer):
+    """Legacy serializer name mapping for backward compatibility"""
+    campaign_id = serializers.UUIDField()
+    geofence_id = serializers.UUIDField()
+    latitude = serializers.DecimalField(max_digits=10, decimal_places=7)
+    longitude = serializers.DecimalField(max_digits=10, decimal_places=7)
+    
+    def validate(self, attrs):
+        # Delegate to CampaignJoinSerializer for actual validation
+        join_serializer = CampaignJoinSerializer(data=attrs, context=self.context)
+        join_serializer.is_valid(raise_exception=True)
         return attrs
 
 
@@ -503,10 +679,99 @@ class CampaignRiderAssignmentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'assigned_at', 'accepted_at', 'started_at', 'completed_at']
 
 
+class GeofenceAssignmentSerializer(serializers.ModelSerializer):
+    """Serializer for rider's geofence assignment details with full map display data"""
+    geofence_name = serializers.CharField(source='campaign_geofence.name', read_only=True)
+    geofence_id = serializers.CharField(source='campaign_geofence.id', read_only=True)
+    
+    # Mobile app expects these field names (without underscores)
+    centerLatitude = serializers.FloatField(source='campaign_geofence.center_latitude', read_only=True)
+    centerLongitude = serializers.FloatField(source='campaign_geofence.center_longitude', read_only=True)
+    radius = serializers.IntegerField(source='campaign_geofence.radius_meters', read_only=True)
+    
+    # Keep old field names for backward compatibility
+    center_latitude = serializers.FloatField(source='campaign_geofence.center_latitude', read_only=True)
+    center_longitude = serializers.FloatField(source='campaign_geofence.center_longitude', read_only=True)
+    radius_meters = serializers.IntegerField(source='campaign_geofence.radius_meters', read_only=True)
+    
+    # Rate and financial info
+    rate_per_km = serializers.FloatField(source='campaign_geofence.rate_per_km', read_only=True)
+    rate_per_hour = serializers.FloatField(source='campaign_geofence.rate_per_hour', read_only=True)
+    fixed_daily_rate = serializers.FloatField(source='campaign_geofence.fixed_daily_rate', read_only=True)
+    
+    # Map display properties
+    isHighPriority = serializers.BooleanField(source='campaign_geofence.is_high_priority', read_only=True)
+    displayColor = serializers.SerializerMethodField()
+    displayAlpha = serializers.SerializerMethodField()
+    name = serializers.CharField(source='campaign_geofence.name', read_only=True)
+    
+    # Additional geofence properties for mobile app
+    budget = serializers.FloatField(source='campaign_geofence.budget', read_only=True)
+    spent = serializers.FloatField(source='campaign_geofence.spent', read_only=True)
+    remainingBudget = serializers.SerializerMethodField()
+    maxRiders = serializers.IntegerField(source='campaign_geofence.max_riders', read_only=True)
+    currentRiders = serializers.IntegerField(source='campaign_geofence.current_riders', read_only=True)
+    isActive = serializers.SerializerMethodField()
+    
+    # Override decimal fields to return as floats instead of strings
+    earnings_from_geofence = serializers.FloatField(read_only=True)
+    distance_covered = serializers.FloatField(read_only=True) 
+    hours_active = serializers.FloatField(read_only=True)
+    
+    def get_displayColor(self, obj):
+        """Calculate display color based on geofence status and priority"""
+        geofence = obj.campaign_geofence
+        if geofence.status != 'active':
+            return 0xFF9E9E9E  # Grey for inactive
+        if geofence.is_high_priority:
+            return 0xFFFF5722  # Deep Orange for high priority
+        
+        # Calculate fill percentage for color coding
+        if geofence.max_riders > 0:
+            fill_percentage = (geofence.current_riders / geofence.max_riders) * 100
+            if fill_percentage > 80:
+                return 0xFFFF9800  # Orange for nearly full
+        
+        return 0xFF4CAF50  # Green for normal active geofences
+    
+    def get_displayAlpha(self, obj):
+        """Calculate display transparency based on availability"""
+        geofence = obj.campaign_geofence
+        # Check if geofence can accept more riders
+        if geofence.status != 'active' or geofence.current_riders >= geofence.max_riders:
+            return 0.5  # Semi-transparent if unavailable
+        return 1.0  # Fully opaque if available
+    
+    def get_remainingBudget(self, obj):
+        """Calculate remaining budget"""
+        geofence = obj.campaign_geofence
+        return float(geofence.budget - geofence.spent)
+    
+    def get_isActive(self, obj):
+        """Check if geofence is currently active"""
+        return obj.campaign_geofence.status == 'active'
+    
+    class Meta:
+        model = CampaignGeofenceAssignment
+        fields = [
+            'geofence_id', 'geofence_name', 'status', 'started_at', 'completed_at',
+            # Mobile-friendly field names
+            'centerLatitude', 'centerLongitude', 'radius', 'name',
+            'isHighPriority', 'displayColor', 'displayAlpha', 'isActive',
+            'budget', 'spent', 'remainingBudget', 'maxRiders', 'currentRiders',
+            # Backward compatibility field names  
+            'center_latitude', 'center_longitude', 'radius_meters',
+            'rate_per_km', 'rate_per_hour', 'fixed_daily_rate',
+            'earnings_from_geofence', 'distance_covered', 'hours_active'
+        ]
+        read_only_fields = ['started_at', 'completed_at', 'earnings_from_geofence', 'distance_covered', 'hours_active']
+
+
 class MyCampaignsSerializer(serializers.ModelSerializer):
-    """Serializer for rider's active campaigns"""
+    """Serializer for rider's active campaigns with geofence assignment details"""
     
     assignment = serializers.SerializerMethodField('get_assignment')
+    active_geofences = serializers.SerializerMethodField('get_active_geofences')
     client_name = serializers.CharField(source='client.name', read_only=True)
     agency_name = serializers.CharField(source='agency.name', read_only=True)
     days_remaining = serializers.SerializerMethodField('get_days_remaining')
@@ -517,7 +782,7 @@ class MyCampaignsSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'campaign_type', 'status',
             'client_name', 'agency_name', 'start_date', 'end_date',
             'platform_rate', 'target_cities', 'verification_frequency',
-            'days_remaining', 'assignment', 'sticker_design'
+            'days_remaining', 'assignment', 'active_geofences', 'sticker_design'
         ]
     
     def get_assignment(self, obj):
@@ -540,6 +805,19 @@ class MyCampaignsSerializer(serializers.ModelSerializer):
             except CampaignRiderAssignment.DoesNotExist:
                 return None
         return None
+    
+    def get_active_geofences(self, obj):
+        """Get rider's active geofence assignments for this campaign"""
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'rider_profile'):
+            geofence_assignments = CampaignGeofenceAssignment.objects.filter(
+                rider=request.user.rider_profile,
+                campaign_geofence__campaign=obj,
+                status__in=['assigned', 'active']
+            ).select_related('campaign_geofence')
+            
+            return GeofenceAssignmentSerializer(geofence_assignments, many=True).data
+        return []
     
     def get_days_remaining(self, obj):
         """Calculate days remaining in campaign"""

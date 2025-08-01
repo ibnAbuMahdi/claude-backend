@@ -536,7 +536,7 @@ def send_otp_kudisms(self, phone_number):
         # Use the exact format from KudiSMS documentation
         response = requests.request('POST',
             'https://my.kudisms.net/api/sendotp',
-            headers={},
+            headers={'Content-Type': 'text/plain'},
             data=form_data,
             files=[]
         )
@@ -602,6 +602,59 @@ def send_otp_kudisms(self, phone_number):
             # Final failure - log critical error
             logger.critical(f"Kudisms OTP failed permanently for {phone_number}")
             return {'success': False, 'error': str(exc)}
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def test_termii_sms(request):
+    """
+    Test endpoint for Kudi SMS service (local testing only)
+    Endpoint: POST /api/v1/auth/test-termii-sms/
+    """
+    
+    phone_number = request.data.get('phone_number')
+
+    if not phone_number:
+        return Response({'error': 'Phone number is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Hardcoded Termii API values
+    api_key = "TLyAJAbGpSpKoTfGrRbkQChOgrNNPkcmJBHWXmfOSAfWabPWnRONNJDsnzJAdo"
+    url = "https://v3.api.termii.com/api/sms/otp/send"
+    sender = "Stika ng"
+    pin_type = "NUMERIC"
+    pin_attempts = 2
+    pin_time_to_live = 5
+    pin_length = 4
+    message_text = "Your verification code is {{pin}}. It will expire in 5 minutes."
+
+    payload = {
+        "api_key": api_key,
+        "message_type": pin_type,
+        "to": phone_number.replace('+', ''),
+        "from": sender,
+        "channel": "generic",
+        "pin_attempts": pin_attempts,
+        "pin_time_to_live": pin_time_to_live,
+        "pin_length": pin_length,
+        "pin_placeholder": "{{pin}}",
+        "message_text": message_text,
+	"pin_type": pin_type,
+    }
+    headers = {
+	'Content-Type': 'application/json',
+    }
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        result = response.json()
+
+        if response.status_code == 200 and result.get('code') == 'ok':
+            return Response({'message': 'OTP sent successfully', 'data': result}, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'Failed to send OTP', 'details': result}, status=status.HTTP_400_BAD_REQUEST)
+
+    except requests.exceptions.RequestException as e:
+        return Response({'error': 'Request failed', 'details': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
 
 # Celery task for verifying OTP via Kudisms
 @shared_task(bind=True, max_retries=2)

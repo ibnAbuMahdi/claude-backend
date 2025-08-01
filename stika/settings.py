@@ -30,6 +30,7 @@ DJANGO_APPS = [
 THIRD_PARTY_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_gis',
     'corsheaders',
     'django_filters',
     'django_extensions',
@@ -51,6 +52,7 @@ LOCAL_APPS = [
     'apps.verification',
     'apps.payments',
     'apps.analytics',
+    'apps.tracking',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

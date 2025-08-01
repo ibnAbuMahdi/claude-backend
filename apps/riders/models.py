@@ -53,6 +53,13 @@ class Rider(BaseModel):
     
     # Tricycle Information
     tricycle_registration = models.CharField(max_length=20)
+    plate_number = models.CharField(
+        max_length=8,
+        unique=True,
+        blank=True,
+        null=True,
+        help_text="Tricycle plate number in format ABC123DD"
+    )
     tricycle_model = models.CharField(max_length=100, blank=True)
     tricycle_year = models.PositiveIntegerField(blank=True, null=True)
     tricycle_color = models.CharField(max_length=50, blank=True)
@@ -82,6 +89,11 @@ class Rider(BaseModel):
         blank=True,
         null=True
     )
+    
+    # Activation tracking
+    activated_at = models.DateTimeField(blank=True, null=True)
+    activation_attempts = models.PositiveIntegerField(default=0)
+    last_activation_attempt = models.DateTimeField(blank=True, null=True)
     
     # Performance Metrics
     rating = models.DecimalField(
@@ -141,6 +153,11 @@ class Rider(BaseModel):
             # Generate unique rider ID
             import random
             self.rider_id = f"STK-R-{random.randint(10000, 99999)}"
+            
+        # Normalize plate number to uppercase
+        if self.plate_number:
+            self.plate_number = self.plate_number.upper()
+            
         super().save(*args, **kwargs)
     
     @property
@@ -164,6 +181,76 @@ class Rider(BaseModel):
             self.is_available and
             self.current_campaign_count < self.max_concurrent_campaigns
         )
+    
+    def can_activate(self):
+        """Check if rider can be activated"""
+        return self.status == 'pending' and not self.plate_number
+    
+    def activate_with_plate(self, plate_number):
+        """
+        Activate rider with plate number
+        Returns tuple: (success: bool, message: str)
+        """
+        from django.utils import timezone
+        from django.core.exceptions import ValidationError
+        import re
+        
+        # Validate current status
+        if self.status != 'pending':
+            return False, f"Cannot activate rider with status '{self.status}'. Only pending riders can be activated."
+        
+        # Check if already activated
+        if self.plate_number:
+            return False, "Rider is already activated with a plate number."
+        
+        # Validate plate number format (ABC123DD)
+        plate_number = plate_number.upper().strip()
+        if not re.match(r'^[A-Z]{3}[0-9]{3}[A-Z]{2}$', plate_number):
+            return False, "Invalid plate number format. Must be in format ABC123DD (3 letters, 3 numbers, 2 letters)."
+        
+        # Check for duplicate plate number
+        if Rider.objects.filter(plate_number=plate_number).exists():
+            return False, "This plate number is already registered by another rider."
+        
+        # Update activation attempts
+        self.activation_attempts += 1
+        self.last_activation_attempt = timezone.now()
+        
+        # Check activation attempt limit (prevent spam)
+        if self.activation_attempts > 5:
+            return False, "Maximum activation attempts exceeded. Please contact support."
+        
+        # Activate the rider
+        self.plate_number = plate_number
+        self.status = 'active'
+        self.activated_at = timezone.now()
+        self.verification_status = 'pending'  # Pending verification after activation
+        
+        try:
+            self.save()
+            return True, "Rider activated successfully."
+        except Exception as e:
+            return False, f"Failed to activate rider: {str(e)}"
+    
+    @staticmethod
+    def validate_plate_number(plate_number):
+        """Validate plate number format and uniqueness"""
+        import re
+        
+        if not plate_number:
+            return False, "Plate number is required."
+        
+        plate_number = plate_number.upper().strip()
+        
+        # Check format (ABC123DD)
+        if not re.match(r'^[A-Z]{3}[0-9]{3}[A-Z]{2}$', plate_number):
+            return False, "Invalid plate number format. Must be in format ABC123DD (3 letters, 3 numbers, 2 letters)."
+        
+        # Check uniqueness
+        if Rider.objects.filter(plate_number=plate_number).exists():
+            return False, "This plate number is already registered by another rider."
+        
+        return True, "Plate number is valid."
 
 class RiderLocation(BaseModel):
     """Track rider locations for route optimization and verification"""

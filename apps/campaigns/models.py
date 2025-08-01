@@ -642,3 +642,93 @@ class CampaignGeofenceAssignment(BaseModel):
     @property
     def is_active(self):
         return self.status == 'active' and self.campaign_geofence.is_active
+
+
+class PickupLocation(BaseModel):
+    """
+    Sticker pickup location for each geofence
+    One-to-many relationship with CampaignGeofence (multiple pickup locations per geofence)
+    """
+    
+    # Many-to-one relationship with geofence
+    geofence = models.ForeignKey(
+        CampaignGeofence,
+        on_delete=models.CASCADE,
+        related_name='pickup_locations'
+    )
+    
+    # Contact Information
+    contact_name = models.CharField(
+        max_length=100,
+        help_text="Contact person at pickup location"
+    )
+    contact_phone = models.CharField(
+        max_length=20,
+        help_text="Phone number for pickup coordination"
+    )
+    
+    # Location Details
+    address = models.TextField(
+        help_text="Full address of pickup location"
+    )
+    landmark = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Nearby landmark for easier location"
+    )
+    
+    # Instructions
+    pickup_instructions = models.TextField(
+        blank=True,
+        help_text="Special instructions for sticker collection"
+    )
+    
+    # Operating Schedule
+    operating_hours = models.JSONField(
+        default=dict,
+        help_text="Operating hours for pickup (e.g., {'monday': '09:00-17:00', 'tuesday': '09:00-17:00'})"
+    )
+    
+    # Availability
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether pickup location is currently available"
+    )
+    
+    # Additional Notes
+    notes = models.TextField(
+        blank=True,
+        help_text="Additional notes about the pickup location"
+    )
+    
+    class Meta:
+        ordering = ['geofence__priority']
+        indexes = [
+            models.Index(fields=['geofence']),
+            models.Index(fields=['is_active']),
+        ]
+    
+    def __str__(self):
+        return f"Pickup: {self.geofence.name} - {self.contact_name}"
+    
+    @property
+    def full_location_info(self):
+        """Get formatted location information for display"""
+        info = f"{self.address}"
+        if self.landmark:
+            info += f" (Near {self.landmark})"
+        return info
+    
+    def get_today_hours(self):
+        """Get operating hours for today"""
+        from django.utils import timezone
+        today = timezone.now().strftime('%A').lower()
+        
+        # Handle both string and dict formats for operating_hours
+        if isinstance(self.operating_hours, dict):
+            return self.operating_hours.get(today, 'Closed')
+        elif isinstance(self.operating_hours, str):
+            # For string format, return the string as-is
+            return self.operating_hours
+        else:
+            return 'Closed'
